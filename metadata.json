@@ -1,0 +1,5 @@
+{
+  "name": "LipRead AI",
+  "description": "Ferramenta avanzada de lectura de labios con recorte e zoom de vídeo impulsada por Gemini 3.0.",
+  "requestFramePermissions": []
+}
