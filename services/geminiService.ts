@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { AnalysisResult } from "../types";
 
 const API_KEY = process.env.API_KEY || '';
 
@@ -17,7 +18,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-export const analyzeLipReading = async (videoBlob: Blob, language: string): Promise<string> => {
+export const analyzeLipReading = async (videoBlob: Blob, language: string): Promise<AnalysisResult> => {
   if (!API_KEY) {
     throw new Error("API Key non atopada. Configura o teu process.env.API_KEY.");
   }
@@ -27,42 +28,79 @@ export const analyzeLipReading = async (videoBlob: Blob, language: string): Prom
   try {
     const base64Data = await blobToBase64(videoBlob);
 
-    const languageInstruction = language === 'auto' 
-      ? "Detecta o idioma automaticamente (probablemente Español ou Galego)." 
-      : `O idioma falado é: ${language}.`;
+    // Map 'auto' to a more descriptive instruction
+    const languageContext = language === 'auto' 
+      ? "Español, Galego, Inglés ou Portugués (detecta automaticamente)." 
+      : language;
 
-    // Using gemini-3-pro-preview for advanced reasoning on visual data
+    const prompt = `### ROL
+Eres un experto forense en lectura de labios (VSR) y fonética visual. Tu tarea es transcribir el habla silenciosa basándote en una secuencia de video centrada en la boca del hablante.
+
+### CONTEXTO
+El idioma objetivo es: ${languageContext}.
+El video es un primer plano recortado de la boca.
+
+### INSTRUCCIONES PASO A PASO
+1.  **Análisis de Visemas:** Analiza cuadro por cuadro los movimientos clave. Identifica:
+    * Apertura de la mandíbula (cerrada, media, abierta).
+    * Forma de los labios (estirados, redondeados, neutros).
+    * Posición de la lengua (visible, detrás de los dientes, tocando el paladar).
+    * Interacción dental (mordida del labio inferior, dientes visibles).
+
+2.  **Mapeo Fonético:** Agrupa estos movimientos en posibles sílabas o palabras candidatas. Ten en cuenta que sonidos como /p/, /b/, /m/ se ven igual, al igual que /f/ y /v/. Usa el contexto gramatical para desambiguar.
+
+3.  **Transcripción:** Genera la frase más probable que coincida lógica y gramaticalmente con los movimientos observados.
+
+### FORMATO DE SALIDA
+Responde ÚNICAMENTE con este JSON:
+{
+  "analisis_movimiento": "Descripción técnica breve de lo observado (ej: inicio bilabial, seguido de vocal abierta...).",
+  "candidatos": ["palabra_posible_1", "palabra_posible_2"],
+  "transcripcion_final": "La frase exacta.",
+  "nivel_de_confianza": "Bajo/Medio/Alto"
+}`;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: {
         parts: [
           {
             inlineData: {
-              mimeType: 'video/webm', // Using webm as likely output from MediaRecorder
+              mimeType: videoBlob.type || 'video/webm',
               data: base64Data,
             },
           },
           {
-            text: `Actúa como un experto lector de labios forense. 
-            
-            Recortei este vídeo para centrarme exclusivamente na zona da boca do falante. 
-            A túa tarefa é transcribir o que se está a dicir baseándote nos movementos visuais dos labios.
-            ${languageInstruction}
-            
-            Instrucións:
-            1. Ignora calquera pista de audio se existe (o enfoque é visual).
-            2. Transcribe a frase exacta.
-            3. Se hai ambigüidade, proporciona a interpretación máis probable.
-            4. Devolve SÓ a transcrición do texto, sen introducións nin explicacións extra.`
+            text: prompt
           },
         ],
       },
       config: {
-        temperature: 0.2, // Lower temperature for more precise/deterministic output
+        temperature: 0.2,
+        responseMimeType: 'application/json',
       },
     });
 
-    return response.text || "Non se puido xerar unha transcrición.";
+    const jsonText = response.text || '{}';
+    let resultData;
+    
+    try {
+      resultData = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("Failed to parse JSON", jsonText);
+      return {
+        text: "Erro ao interpretar a resposta.",
+        details: "Non se puido ler o formato JSON."
+      };
+    }
+
+    return {
+      text: resultData.transcripcion_final || "Non se puido transcribir.",
+      confidence: resultData.nivel_de_confianza,
+      details: resultData.analisis_movimiento,
+      candidates: resultData.candidatos
+    };
+
   } catch (error) {
     console.error("Error calling Gemini:", error);
     throw error;

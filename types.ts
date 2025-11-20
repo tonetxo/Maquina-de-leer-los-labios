@@ -23,4 +23,5 @@ export interface AnalysisResult {
   text: string;
   confidence?: string;
   details?: string;
+  candidates?: string[];
 }

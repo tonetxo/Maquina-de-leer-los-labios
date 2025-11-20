@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Scissors, Play, Pause, ZoomIn, Crop as CropIcon, BrainCircuit, RefreshCcw, Trash2, AlertCircle, Languages } from 'lucide-react';
-import { VideoState, CropArea, ProcessingStatus } from './types';
+import { Upload, Scissors, Play, Pause, ZoomIn, Crop as CropIcon, BrainCircuit, RefreshCcw, Trash2, AlertCircle, Languages, CheckCircle2, Search, BarChart3 } from 'lucide-react';
+import { VideoState, CropArea, ProcessingStatus, AnalysisResult } from './types';
 import { recordCroppedVideo } from './utils/videoUtils';
 import { analyzeLipReading } from './services/geminiService';
 import { Loader } from './components/Loader';
@@ -35,7 +35,8 @@ const App: React.FC = () => {
 
   // Processing state
   const [status, setStatus] = useState<ProcessingStatus>(ProcessingStatus.IDLE);
-  const [resultText, setResultText] = useState<string>("");
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // UI State
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -62,7 +63,8 @@ const App: React.FC = () => {
       const url = URL.createObjectURL(file);
       setVideoState({ file, url, duration: 0 });
       setStatus(ProcessingStatus.IDLE);
-      setResultText("");
+      setAnalysisResult(null);
+      setErrorMessage(null);
     } else {
       alert("Por favor sube un arquivo de vídeo válido.");
     }
@@ -155,9 +157,11 @@ const App: React.FC = () => {
     };
   };
 
+  // MOUSE Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!isCropping) return;
     e.preventDefault(); // Prevent text selection/dragging image ghost
+    e.stopPropagation();
     isDraggingRef.current = true;
     startPosRef.current = { x: e.clientX, y: e.clientY };
     startCropRef.current = { ...crop };
@@ -181,6 +185,39 @@ const App: React.FC = () => {
   };
 
   const handleMouseUp = () => {
+    isDraggingRef.current = false;
+  };
+
+  // TOUCH Handlers (For Mobile)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isCropping) return;
+    e.stopPropagation();
+    const touch = e.touches[0];
+    isDraggingRef.current = true;
+    startPosRef.current = { x: touch.clientX, y: touch.clientY };
+    startCropRef.current = { ...crop };
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current || !isCropping || !videoRef.current) return;
+    // Note: 'touch-action: none' in CSS handles the scroll prevention better than preventDefault here
+    
+    const touch = e.touches[0];
+    const scale = getScaleFactors();
+    const dx = (touch.clientX - startPosRef.current.x) * scale.x;
+    const dy = (touch.clientY - startPosRef.current.y) * scale.y;
+
+    let newX = startCropRef.current.x + dx;
+    let newY = startCropRef.current.y + dy;
+
+    // Boundaries
+    newX = Math.max(0, Math.min(newX, videoDimensions.width - crop.width));
+    newY = Math.max(0, Math.min(newY, videoDimensions.height - crop.height));
+
+    setCrop(prev => ({ ...prev, x: newX, y: newY }));
+  };
+
+  const handleTouchEnd = () => {
     isDraggingRef.current = false;
   };
 
@@ -214,6 +251,7 @@ const App: React.FC = () => {
     try {
       setIsPlaying(false); // Force pause UI state
       setStatus(ProcessingStatus.CROPPING);
+      setErrorMessage(null);
       statusRef.current = ProcessingStatus.CROPPING;
       
       // 1. Crop and Record
@@ -228,9 +266,9 @@ const App: React.FC = () => {
       statusRef.current = ProcessingStatus.ANALYZING;
 
       // 2. Send to Gemini
-      const text = await analyzeLipReading(croppedBlob, selectedLanguage);
+      const result = await analyzeLipReading(croppedBlob, selectedLanguage);
       
-      setResultText(text);
+      setAnalysisResult(result);
       setStatus(ProcessingStatus.COMPLETED);
       statusRef.current = ProcessingStatus.COMPLETED;
 
@@ -238,12 +276,15 @@ const App: React.FC = () => {
       console.error("Error processing video:", error);
       setStatus(ProcessingStatus.ERROR);
       statusRef.current = ProcessingStatus.ERROR;
+      setErrorMessage(error instanceof Error ? error.message : "Erro descoñecido no procesamento.");
+      setIsPlaying(false); // Ensure we aren't stuck in playing state
     }
   };
 
   const reset = () => {
     setVideoState({ file: null, url: null, duration: 0 });
-    setResultText("");
+    setAnalysisResult(null);
+    setErrorMessage(null);
     setStatus(ProcessingStatus.IDLE);
     statusRef.current = ProcessingStatus.IDLE;
     setIsPlaying(false);
@@ -264,13 +305,15 @@ const App: React.FC = () => {
       top: `${crop.y * scaleY}px`,
       width: `${crop.width * scaleX}px`,
       height: `${crop.height * scaleY}px`,
+      touchAction: 'none', // CRITICAL for mobile dragging
     };
 
     return (
       <div 
         className="absolute border-2 border-brand-500 shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] cursor-move group z-10"
-        style={style}
+        style={style as React.CSSProperties}
         onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
       >
         {/* Crosshair center */}
         <div className="absolute top-1/2 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 pointer-events-none opacity-50">
@@ -331,7 +374,15 @@ const App: React.FC = () => {
 
   // --- View: Editor / Results ---
   return (
-    <div className="h-full w-full flex flex-col bg-slate-950 overflow-hidden" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+    <div 
+      className="h-full w-full flex flex-col bg-slate-950 overflow-hidden" 
+      onMouseMove={handleMouseMove} 
+      onMouseUp={handleMouseUp} 
+      onMouseLeave={handleMouseUp}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
       {/* Header */}
       <header className="h-16 shrink-0 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900 z-20">
         <div className="flex items-center gap-2">
@@ -478,21 +529,11 @@ const App: React.FC = () => {
              </select>
           </div>
 
-          {/* Instructions / Help */}
-          <div className="p-6 bg-slate-800/50 border-b border-slate-800 shrink-0 hidden sm:block">
-             <div className="flex gap-3 items-start">
-               <AlertCircle size={16} className="text-brand-500 mt-0.5 shrink-0" />
-               <p className="text-xs text-slate-400 leading-relaxed">
-                 1. Axusta o <strong>inicio e fin</strong> para illar a frase. <br/>
-                 2. Arrastra o <strong>cadro azul</strong> sobre a boca. <br/>
-                 3. Pulsa <strong>Analizar</strong>.
-               </p>
-             </div>
-          </div>
-
           {/* Results Area */}
           <div className="flex-1 p-6 flex flex-col overflow-y-auto">
-            <h3 className="text-sm font-semibold text-slate-300 mb-4 shrink-0">Transcrición</h3>
+            <h3 className="text-sm font-semibold text-slate-300 mb-4 shrink-0 flex items-center gap-2">
+               <Search size={16} /> Transcrición
+            </h3>
             
             {status === ProcessingStatus.CROPPING && (
                <Loader text="Mellorando vídeo e recorte (Upscaling)..." />
@@ -501,27 +542,71 @@ const App: React.FC = () => {
                <Loader text="Lendo labios (IA)..." />
             )}
             
-            {status === ProcessingStatus.COMPLETED && (
-              <div className="bg-slate-800/80 border border-brand-500/30 p-5 rounded-xl animate-in slide-in-from-bottom-4 duration-500">
-                <p className="text-white text-lg leading-relaxed font-medium">
-                  "{resultText}"
-                </p>
-                <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
-                  <span className="text-xs text-slate-500">Gemini 3.0 Pro</span>
-                  <span className="text-xs text-brand-400">Completado</span>
+            {status === ProcessingStatus.COMPLETED && analysisResult && (
+              <div className="flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-500">
+                {/* Main Result */}
+                <div className="bg-slate-800/80 border border-brand-500/30 p-5 rounded-xl">
+                  <p className="text-white text-lg leading-relaxed font-medium">
+                    "{analysisResult.text}"
+                  </p>
+                  
+                  <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
+                     <div className="flex items-center gap-2 text-xs">
+                       <BarChart3 size={14} className="text-slate-500" />
+                       <span className="text-slate-400">Confianza:</span>
+                       <span className={`font-medium ${analysisResult.confidence?.toLowerCase().includes('alto') ? 'text-green-400' : 'text-yellow-400'}`}>
+                         {analysisResult.confidence || 'N/A'}
+                       </span>
+                     </div>
+                     <span className="text-xs text-brand-400 flex items-center gap-1">
+                       <CheckCircle2 size={12} /> Completado
+                     </span>
+                  </div>
                 </div>
+
+                {/* Analysis Details */}
+                {analysisResult.details && (
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Análise de Visemas</h4>
+                    <p className="text-sm text-slate-400 leading-relaxed">
+                      {analysisResult.details}
+                    </p>
+                  </div>
+                )}
+
+                {/* Candidates */}
+                {analysisResult.candidates && analysisResult.candidates.length > 0 && (
+                  <div className="bg-slate-900 border border-slate-800 p-4 rounded-lg">
+                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Candidatos Alternativos</h4>
+                     <div className="flex flex-wrap gap-2">
+                       {analysisResult.candidates.map((c, i) => (
+                         <span key={i} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700">
+                           {c}
+                         </span>
+                       ))}
+                     </div>
+                  </div>
+                )}
               </div>
             )}
 
             {status === ProcessingStatus.ERROR && (
-               <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-lg text-red-400 text-sm">
-                  Ocorreu un erro durante o proceso. Asegúrate de que o vídeo sexa válido e a API Key estea configurada.
+               <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-lg flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <div className="flex flex-col gap-1">
+                     <h4 className="text-red-400 text-sm font-semibold">Erro no proceso</h4>
+                     <p className="text-red-300/80 text-xs leading-relaxed">
+                        {errorMessage || "Ocorreu un erro descoñecido. Comproba a conexión ou intenta con outro vídeo."}
+                     </p>
+                  </div>
                </div>
             )}
             
-            {status === ProcessingStatus.IDLE && resultText === "" && (
+            {status === ProcessingStatus.IDLE && !analysisResult && (
               <div className="flex-1 flex items-center justify-center text-slate-600 text-sm italic">
-                Os resultados aparecerán aquí...
+                <div className="flex flex-col items-center gap-2">
+                  <p>Os resultados aparecerán aquí...</p>
+                </div>
               </div>
             )}
           </div>
