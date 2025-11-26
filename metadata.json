@@ -1,0 +1,8 @@
+{
+  "name": "Lip Reader AI",
+  "description": "An application that uses AI to analyze a video of a person speaking, transcribes their lip movements into text, and can convert that text into speech. This application requires camera and microphone permissions to function.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
