@@ -4,3 +4,9 @@ export const formatTime = (time: number) => {
     const milliseconds = Math.floor((time % 1) * 100);
     return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(milliseconds).padStart(2, '0')}`;
 };
+
+export const formatSeconds = (time: number) => {
+    const totalSeconds = Math.floor(time);
+    const milliseconds = Math.floor((time % 1) * 100);
+    return `${totalSeconds}.${String(milliseconds).padStart(2, '0')}s`;
+};

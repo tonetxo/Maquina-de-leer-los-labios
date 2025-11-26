@@ -1,10 +1,10 @@
 import { GoogleGenAI, Modality } from '@google/genai';
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable not set");
+if (!import.meta.env.VITE_API_KEY) {
+    throw new Error("VITE_API_KEY environment variable not set");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 const visionModel = 'gemini-2.5-pro';
 const ttsModel = 'gemini-2.5-flash-preview-tts';
 

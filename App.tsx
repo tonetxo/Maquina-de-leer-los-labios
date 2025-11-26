@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { transcribeVideoFromFrames, generateSpeech } from './services/geminiService';
 import { extractFramesFromVideo } from './utils/media';
 import { decodeBase64, decodeAudioData } from './utils/audio';
@@ -27,12 +27,10 @@ export default function App() {
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetState = () => {
-    if (audioSourceRef.current) {
-        audioSourceRef.current.stop();
-        audioSourceRef.current = null;
-    }
+    cleanupAudioContext();
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoFile(null);
     setVideoUrl(null);
@@ -43,8 +41,9 @@ export default function App() {
     setLanguage('auto');
     setDebugFrames(null);
     setStatus({ stage: 'idle', message: 'Upload a video to begin' });
-    const fileInput = document.getElementById('video-upload') as HTMLInputElement;
-    if(fileInput) fileInput.value = '';
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+    }
   }
 
   const processFile = (file: File | null | undefined) => {
@@ -52,8 +51,9 @@ export default function App() {
 
     if (!file.type.startsWith('video/')) {
         setStatus({ stage: 'error', message: 'Invalid file type. Please upload a video.' });
-        const fileInput = document.getElementById('video-upload') as HTMLInputElement;
-        if(fileInput) fileInput.value = '';
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
         return;
     }
 
@@ -114,22 +114,26 @@ export default function App() {
     setStatus({ stage: 'idle', message: 'Crop area set. Ready to transcribe.' });
   };
 
-  const handleTranscribe = async () => {
+  const getProcessedFrames = async (taskName: string) => {
     if (!videoFile || !cropArea || !timeRange) {
       setStatus({ stage: 'error', message: 'Missing video, crop area, or time range.' });
-      return;
+      throw new Error('Missing requirements');
     }
-    
-    setCurrentStage('processing');
-    setStatus({ stage: 'processing', message: 'Extracting frames...', progress: 0 });
 
-    try {
-      const frames = await extractFramesFromVideo(
+    setStatus({ stage: 'processing', message: `Extracting frames for ${taskName}...`, progress: 0 });
+    
+    return extractFramesFromVideo(
         videoFile, 
         (p) => setStatus({ stage: 'processing', message: `Extracting frames... ${Math.round(p * 100)}%`, progress: p }), 
         timeRange,
         cropArea
       );
+  };
+
+  const handleTranscribe = async () => {
+    try {
+      setCurrentStage('processing');
+      const frames = await getProcessedFrames('transcription');
 
       setStatus({ stage: 'analyzing', message: 'AI is analyzing the lip movements...' });
       const duration = timeRange.end - timeRange.start;
@@ -139,29 +143,23 @@ export default function App() {
       setStatus({ stage: 'success', message: 'Transcription complete!' });
     } catch (error) {
       console.error('Transcription failed:', error);
-      setStatus({ stage: 'error', message: `An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      if (error instanceof Error && error.message !== 'Missing requirements') {
+          setStatus({ stage: 'error', message: `An error occurred: ${error.message}` });
+      }
     }
   };
 
   const handleDebug = async () => {
-    if (!videoFile || !cropArea || !timeRange) {
-      setStatus({ stage: 'error', message: 'Missing video, crop area, or time range.' });
-      return;
-    }
-    setStatus({ stage: 'processing', message: 'Extracting frames for debug...', progress: 0 });
     try {
-      const frames = await extractFramesFromVideo(
-        videoFile, 
-        (p) => setStatus({ stage: 'processing', message: `Extracting frames... ${Math.round(p * 100)}%`, progress: p }), 
-        timeRange,
-        cropArea
-      );
+      const frames = await getProcessedFrames('debug');
       setDebugFrames(frames);
       setCurrentStage('debugging');
       setStatus({ stage: 'idle', message: 'Debug frames extracted.' });
     } catch (error) {
       console.error('Debug failed:', error);
-      setStatus({ stage: 'error', message: `An error occurred: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      if (error instanceof Error && error.message !== 'Missing requirements') {
+          setStatus({ stage: 'error', message: `An error occurred: ${error.message}` });
+      }
     }
   };
 
@@ -178,7 +176,8 @@ export default function App() {
     try {
       const audioBase64 = await generateSpeech(transcription);
       if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 32000 });
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContextClass({ sampleRate: 32000 });
       }
       const context = audioContextRef.current;
       const audioBytes = decodeBase64(audioBase64);
@@ -197,11 +196,29 @@ export default function App() {
     }
   };
 
+  const cleanupAudioContext = () => {
+    if (audioSourceRef.current) {
+      audioSourceRef.current.stop();
+      audioSourceRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(transcription);
   };
   
   const canTranscribe = videoFile && cropArea && timeRange && !isProcessing && currentStage === 'preview';
+
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      resetState();
+    };
+  }, []);
   
   const renderLeftColumn = () => {
     if (currentStage === 'debugging' && debugFrames) {
@@ -229,6 +246,7 @@ export default function App() {
             <UploadScreen 
               isDraggingOver={isDraggingOver}
               isProcessing={isProcessing}
+              fileInputRef={fileInputRef}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}

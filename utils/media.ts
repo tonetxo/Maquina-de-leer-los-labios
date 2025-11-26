@@ -1,7 +1,22 @@
 import { CropArea, TimeRange } from '../types';
 
-const MAX_FRAMES = 90; // Limit the number of frames to avoid excessive API usage/cost and client-side processing
-const FRAME_QUALITY = 0.95; // JPEG quality for extracted frames
+/**
+ * Maximum number of frames to extract to avoid excessive API usage/cost and client-side processing.
+ * For optimal lip reading accuracy, keep video clips to ~3 seconds to maximize frame density
+ * (at ~30fps, 3 seconds = 90 frames which matches this limit).
+ */
+const MAX_FRAMES = 90;
+
+/**
+ * JPEG quality for extracted frames (0-1).
+ * Higher values provide better image quality but larger file sizes.
+ */
+const FRAME_QUALITY = 0.95;
+
+/**
+ * Target dimensions for upscaled cropped images sent to the AI model.
+ * The AI model performs better with consistent input sizes.
+ */
 const UPSCALE_WIDTH = 512;
 const UPSCALE_HEIGHT = 512;
 
@@ -56,7 +71,7 @@ export function extractFramesFromVideo(file: File, onProgress: (progress: number
           destHeight = UPSCALE_HEIGHT;
           destWidth = destHeight * cropAspectRatio;
       }
-      
+
       canvas.width = Math.round(destWidth);
       canvas.height = Math.round(destHeight);
 
@@ -84,22 +99,23 @@ export function extractFramesFromVideo(file: File, onProgress: (progress: number
       video.onseeked = () => {
         context.imageSmoothingQuality = 'high';
         context.drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
-        
+
         const dataUrl = canvas.toDataURL('image/jpeg', FRAME_QUALITY);
         frames.push(dataUrl.split(',')[1]);
-        
+
         frameCount++;
         currentTime += interval;
         onProgress(frameCount / MAX_FRAMES);
         captureFrame();
       };
-      
+
       video.onerror = (e) => {
           URL.revokeObjectURL(videoUrl);
           video.src = '';
           reject(new Error('Error loading video file.'));
-      }
+      };
 
+      // Call captureFrame to start the process
       captureFrame();
     };
   });

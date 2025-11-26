@@ -131,10 +131,11 @@ const ControlsAndResults: React.FC<ControlsAndResultsProps> = ({
             )}
           </div>
            <p className="text-xs text-gray-500 text-center pt-2">
-             Note: AI lip reading is an experimental technology. Results depend on video quality, lighting, and speaker clarity. Cropping to the lips can improve accuracy.
+             Note: AI lip reading is an experimental technology. Results depend on video quality, lighting, and speaker clarity. For best results, keep clips under 3 seconds and crop closely to the lips.
            </p>
         </div>
     );
 };
 
 export default ControlsAndResults;
+

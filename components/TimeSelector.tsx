@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TimeRange } from '../types';
 import { PlayIcon, StopIcon } from './Icons';
-import { formatTime as formatTimeUtil } from '../utils/formatTime';
+import { formatTime as formatTimeUtil, formatSeconds } from '../utils/formatTime';
 
 type TimeSelectorProps = {
     videoUrl: string;
@@ -10,23 +10,27 @@ type TimeSelectorProps = {
     onCancel: () => void;
 };
 
-const formatTime = (time: number) => {
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-};
-
 const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfirm, onCancel }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const timelineRef = useRef<HTMLDivElement>(null);
-    const [range, setRange] = useState<TimeRange>({ start: 0, end: duration });
+    const [range, setRange] = useState<TimeRange>({ start: 0, end: 0 }); // Start with 0 initially
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const dragInfo = useRef<{ active: boolean; type: 'start' | 'end'; startX: number; startRange: TimeRange } | null>(null);
+    const rangeRef = useRef<TimeRange>(range);
+    const hasInitialized = useRef(false);
 
     useEffect(() => {
-        setRange({ start: 0, end: duration });
-    }, [duration]);
+        // Initialize range when component mounts with a valid duration
+        if (duration > 0 && !hasInitialized.current) {
+            setRange({ start: 0, end: duration });
+            hasInitialized.current = true;
+        }
+    }, [duration]); // Run when duration changes, but only set if not initialized
+
+    useEffect(() => {
+        rangeRef.current = range;
+    }, [range]);
 
     const handleTimeUpdate = () => {
         if (!videoRef.current) return;
@@ -67,19 +71,32 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
 
         const timelineRect = timelineRef.current.getBoundingClientRect();
         const dx = e.clientX - dragInfo.current.startX;
-        const newTimeDelta = (dx / timelineRect.width) * duration;
-        
-        let newRange = { ...dragInfo.current.startRange };
+        const timeDelta = (dx / timelineRect.width) * duration;
+
+        // Calculate new position for the handle being dragged using functional state update
         if (dragInfo.current.type === 'start') {
-            newRange.start = Math.max(0, Math.min(newRange.end, dragInfo.current.startRange.start + newTimeDelta));
-        } else {
-            newRange.end = Math.min(duration, Math.max(newRange.start, dragInfo.current.startRange.end + newTimeDelta));
+            // Only modify the start value when dragging start handle
+            setRange(prev => {
+                const newStart = dragInfo.current.startRange.start + timeDelta;
+                const clampedStart = Math.max(0, Math.min(prev.end, newStart)); // Use previous end as constraint
+                return { ...prev, start: clampedStart };
+            });
+        } else { // 'end' handle
+            // Only modify the end value when dragging end handle
+            setRange(prev => {
+                const newEnd = dragInfo.current.startRange.end + timeDelta;
+                const clampedEnd = Math.min(duration, Math.max(prev.start, newEnd)); // Use previous start as constraint
+                return { ...prev, end: clampedEnd };
+            });
         }
-        
-        setRange(newRange);
-        videoRef.current.currentTime = dragInfo.current.type === 'start' ? newRange.start : newRange.end;
-        
-    }, [duration]);
+
+        // Update video playback position to match the handle being dragged
+        const newCalculatedTime = dragInfo.current.type === 'start'
+            ? Math.max(0, Math.min(rangeRef.current.end, dragInfo.current.startRange.start + timeDelta))
+            : Math.min(duration, Math.max(rangeRef.current.start, dragInfo.current.startRange.end + timeDelta));
+        videoRef.current.currentTime = newCalculatedTime;
+
+    }, [duration]);  // Removed 'range' from dependencies since we use functional updates
 
     const handleMouseUp = useCallback(() => {
         dragInfo.current = null;
@@ -92,7 +109,7 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [handleMouseMove, handleMouseUp]);
+    }, [handleMouseMove, handleMouseUp]); // This is now correct since handleMouseMove doesn't depend on range
 
     const startPercent = (range.start / duration) * 100;
     const endPercent = (range.end / duration) * 100;
@@ -131,9 +148,12 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
                      <button onClick={handlePlayPause} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600">
                         {isPlaying ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
                     </button>
-                    <div className="text-sm font-mono">
-                        <span>{formatTimeUtil(currentTime)}</span> / <span>{formatTime(duration)}</span>
+                    
+                    <div className="flex flex-col items-start text-sm font-mono leading-tight mx-4">
+                        <span>{formatSeconds(range.start)} - {formatSeconds(range.end)}</span>
+                        <span className="text-xs text-gray-400">Dur: {formatSeconds(range.end - range.start)}</span>
                     </div>
+
                     <div className="flex gap-2">
                         <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Cancel</button>
                         <button onClick={() => onConfirm(range)} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirm Time</button>
