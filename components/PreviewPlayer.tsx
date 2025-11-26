@@ -94,7 +94,7 @@ const PreviewPlayer: React.FC<PreviewPlayerProps> = ({ videoUrl, timeRange, crop
     return (
         <div className="flex flex-col h-full">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Crop Preview
+                Vista Previa do Recorte
             </p>
             <div className="bg-black rounded-lg overflow-hidden relative flex flex-col flex-grow">
                 <div className="relative w-full flex-grow flex items-center justify-center">

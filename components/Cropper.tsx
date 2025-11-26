@@ -299,8 +299,8 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
                      <span className="text-xs font-mono text-white">{formatTime(timeRange.end)}</span>
                 </div>
                 <div className="flex justify-end gap-2">
-                    <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Back</button>
-                    <button onClick={handleConfirm} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirm Crop</button>
+                    <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Volver</button>
+                    <button onClick={handleConfirm} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirmar Recorte</button>
                 </div>
             </div>
         </div>

@@ -155,8 +155,8 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
                     </div>
 
                     <div className="flex gap-2">
-                        <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Cancel</button>
-                        <button onClick={() => onConfirm(range)} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirm Time</button>
+                        <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Cancelar</button>
+                        <button onClick={() => onConfirm(range)} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirmar Tempo</button>
                     </div>
                 </div>
             </div>

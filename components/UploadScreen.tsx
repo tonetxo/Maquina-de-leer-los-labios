@@ -22,7 +22,7 @@ const UploadScreen: React.FC<UploadScreenProps> = ({ isDraggingOver, isProcessin
             <input ref={fileInputRef} type="file" id="video-upload" className="hidden" accept="video/*" onChange={onFileChange} disabled={isProcessing} />
             <label htmlFor="video-upload" className={`cursor-pointer group ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <UploadIcon className="w-12 h-12 mx-auto text-gray-500 group-hover:text-purple-400 transition-colors" />
-              <p className="mt-2 text-sm text-gray-400">{isDraggingOver ? 'Drop the video to upload' : 'Click to upload or drag & drop a video'}</p>
+              <p className="mt-2 text-sm text-gray-400">{isDraggingOver ? 'Solta o vídeo para subir' : 'Fai clic para subir ou arrastra e solta un vídeo'}</p>
             </label>
         </div>
     );

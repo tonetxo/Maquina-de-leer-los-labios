@@ -36,8 +36,15 @@ export async function transcribeVideoFromFrames(frames: string[], language: stri
 
     let finalPrompt = LIP_READING_PROMPT_BASE.replace('at 25 FPS', `at approximately ${Math.round(fps)} FPS`);
 
+    const preserveLanguages = ['Spanish', 'Galician', 'English'];
+
     if (language && language !== 'auto') {
         finalPrompt += ` The person is speaking ${language}.`;
+        if (!preserveLanguages.includes(language)) {
+            finalPrompt += " Output the original transcription first. Then, add a newline and provide the Spanish translation labeled as 'Translation (Spanish): '.";
+        }
+    } else {
+        finalPrompt += " Detect the language. If the spoken language is NOT Spanish, Galician, or English, output the original transcription, followed by a newline and the Spanish translation labeled as 'Translation (Spanish): '. Otherwise, output ONLY the original transcription.";
     }
 
     const response = await ai.models.generateContent({

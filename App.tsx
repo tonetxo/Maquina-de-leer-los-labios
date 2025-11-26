@@ -40,7 +40,7 @@ export default function App() {
     setCurrentStage('uploading');
     setLanguage('auto');
     setDebugFrames(null);
-    setStatus({ stage: 'idle', message: 'Upload a video to begin' });
+    setStatus({ stage: 'idle', message: 'Sube un vídeo para comezar' });
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
     }
@@ -50,7 +50,7 @@ export default function App() {
     if (!file) return;
 
     if (!file.type.startsWith('video/')) {
-        setStatus({ stage: 'error', message: 'Invalid file type. Please upload a video.' });
+        setStatus({ stage: 'error', message: 'Tipo de ficheiro non válido. Por favor, sube un vídeo.' });
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -68,10 +68,10 @@ export default function App() {
       setVideoDuration(video.duration);
       setTimeRange({ start: 0, end: video.duration });
       setCurrentStage('selecting_time');
-      setStatus({ stage: 'idle', message: 'Step 1: Select the time range to analyze.' });
+      setStatus({ stage: 'idle', message: 'Paso 1: Selecciona o intervalo de tempo a analizar.' });
     };
     video.onerror = () => {
-      setStatus({ stage: 'error', message: 'Failed to load video metadata.' });
+      setStatus({ stage: 'error', message: 'Erro ao cargar os metadatos do vídeo.' });
       setCurrentStage('uploading');
     }
   };
@@ -105,26 +105,26 @@ export default function App() {
   const handleTimeSelectConfirm = async (range: TimeRange) => {
     setTimeRange(range);
     setCurrentStage('cropping_area');
-    setStatus({ stage: 'idle', message: 'Step 2: Define crop area on the speaker\'s lips.' });
+    setStatus({ stage: 'idle', message: 'Paso 2: Define a área de recorte nos beizos do falante.' });
   };
 
   const handleCropConfirm = async (crop: CropArea) => {
     setCropArea(crop);
     setCurrentStage('preview');
-    setStatus({ stage: 'idle', message: 'Crop area set. Ready to transcribe.' });
+    setStatus({ stage: 'idle', message: 'Área de recorte establecida. Listo para transcribir.' });
   };
 
   const getProcessedFrames = async (taskName: string) => {
     if (!videoFile || !cropArea || !timeRange) {
-      setStatus({ stage: 'error', message: 'Missing video, crop area, or time range.' });
+      setStatus({ stage: 'error', message: 'Falta o vídeo, a área de recorte ou o intervalo de tempo.' });
       throw new Error('Missing requirements');
     }
 
-    setStatus({ stage: 'processing', message: `Extracting frames for ${taskName}...`, progress: 0 });
+    setStatus({ stage: 'processing', message: `Extraendo fotogramas para ${taskName}...`, progress: 0 });
     
     return extractFramesFromVideo(
         videoFile, 
-        (p) => setStatus({ stage: 'processing', message: `Extracting frames... ${Math.round(p * 100)}%`, progress: p }), 
+        (p) => setStatus({ stage: 'processing', message: `Extraendo fotogramas... ${Math.round(p * 100)}%`, progress: p }), 
         timeRange,
         cropArea
       );
@@ -135,16 +135,16 @@ export default function App() {
       setCurrentStage('processing');
       const frames = await getProcessedFrames('transcription');
 
-      setStatus({ stage: 'analyzing', message: 'AI is analyzing the lip movements...' });
+      setStatus({ stage: 'analyzing', message: 'A IA está analizando os movementos dos beizos...' });
       const duration = timeRange.end - timeRange.start;
       const effectiveFps = 90 / duration;
       const result = await transcribeVideoFromFrames(frames, language, effectiveFps);
       setTranscription(result);
-      setStatus({ stage: 'success', message: 'Transcription complete!' });
+      setStatus({ stage: 'success', message: 'Transcrición completada!' });
     } catch (error) {
       console.error('Transcription failed:', error);
       if (error instanceof Error && error.message !== 'Missing requirements') {
-          setStatus({ stage: 'error', message: `An error occurred: ${error.message}` });
+          setStatus({ stage: 'error', message: `Ocorreu un erro: ${error.message}` });
       }
     }
   };
@@ -154,11 +154,11 @@ export default function App() {
       const frames = await getProcessedFrames('debug');
       setDebugFrames(frames);
       setCurrentStage('debugging');
-      setStatus({ stage: 'idle', message: 'Debug frames extracted.' });
+      setStatus({ stage: 'idle', message: 'Fotogramas de depuración extraídos.' });
     } catch (error) {
       console.error('Debug failed:', error);
       if (error instanceof Error && error.message !== 'Missing requirements') {
-          setStatus({ stage: 'error', message: `An error occurred: ${error.message}` });
+          setStatus({ stage: 'error', message: `Ocorreu un erro: ${error.message}` });
       }
     }
   };
@@ -171,7 +171,7 @@ export default function App() {
     }
 
     if (!transcription) return;
-    setStatus({ stage: 'generating_audio', message: 'Generating audio...' });
+    setStatus({ stage: 'generating_audio', message: 'Xerando audio...' });
 
     try {
       const audioBase64 = await generateSpeech(transcription);
@@ -189,10 +189,10 @@ export default function App() {
       source.start();
       audioSourceRef.current = source;
       setIsPlayingAudio(true);
-      setStatus({ stage: 'success', message: 'Playing audio.' });
+      setStatus({ stage: 'success', message: 'Reproducindo audio.' });
     } catch (error) {
       console.error('Text-to-speech failed:', error);
-      setStatus({ stage: 'error', message: `Could not generate audio: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      setStatus({ stage: 'error', message: `Non se puido xerar o audio: ${error instanceof Error ? error.message : 'Unknown error'}` });
     }
   };
 
@@ -262,15 +262,15 @@ export default function App() {
       <div className="w-full max-w-4xl mx-auto">
         <header className="text-center mb-8 relative">
           <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600">
-            Lip Reader AI
+            BeizosGal
           </h1>
           <p className="mt-2 text-lg text-gray-400">
-            Upload a video, select a time range, crop the lips, and let Gemini AI transcribe.
+            Sube un vídeo, selecciona un intervalo de tempo, recorta os beizos e deixa que a IA Gemini transcriba.
           </p>
           {currentStage !== 'uploading' && (
              <button onClick={resetState} className="absolute top-0 right-0 flex items-center gap-2 text-sm py-2 px-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
                 <ResetIcon className="w-4 h-4" />
-                <span>Start Over</span>
+                <span>Comezar de novo</span>
             </button>
           )}
         </header>
