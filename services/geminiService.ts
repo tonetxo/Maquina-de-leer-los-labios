@@ -70,7 +70,7 @@ export async function generateSpeech(text: string): Promise<string> {
             responseModalities: [Modality.AUDIO],
             speechConfig: {
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: 'Kore' },
+                    prebuiltVoiceConfig: { voiceName: 'Puck' },
                 },
             },
         },
