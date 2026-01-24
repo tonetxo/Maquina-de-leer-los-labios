@@ -10,5 +10,15 @@ export type TimeRange = {
   end: number;
 };
 
+export interface OllamaModel {
+    name: string;
+    model: string;
+    details: {
+        family: string;
+        format: string;
+        parameter_size: string;
+    };
+}
+
 export { Status } from './status';
 export { Stage } from './ui';

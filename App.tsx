@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { transcribeVideoFromFrames, generateSpeech } from './services/geminiService';
+import { fetchOllamaModels, transcribeWithOllama, OllamaModel } from './services/ollamaService';
 import { extractFramesFromVideo } from './utils/media';
 import { decodeBase64, decodeAudioData } from './utils/audio';
 import { CropArea, TimeRange, Status, Stage } from './types';
@@ -25,13 +26,34 @@ export default function App() {
   const [language, setLanguage] = useState<string>('auto');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [debugFrames, setDebugFrames] = useState<string[] | null>(null);
+  
+  // New AI Provider State
+  const [provider, setProvider] = useState<'gemini' | 'ollama'>('gemini');
+  const [availableOllamaModels, setAvailableOllamaModels] = useState<OllamaModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const loadOllama = async () => {
+      const models = await fetchOllamaModels();
+      setAvailableOllamaModels(models);
+      if (models.length > 0) {
+        // Find a good default like llava if available
+        const defaultModel = models.find(m => m.name.includes('llava')) || models[0];
+        setSelectedModel(defaultModel.name);
+      }
+    };
+    loadOllama();
+  }, []);
+
   const resetState = () => {
     cleanupAudioContext();
+    if (provider === 'ollama' && selectedModel) {
+      stopOllamaModel(selectedModel);
+    }
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoFile(null);
     setVideoUrl(null);
@@ -158,7 +180,14 @@ export default function App() {
         return;
       }
 
-      const result = await transcribeVideoFromFrames(frames, language, effectiveFps);
+      let result: string;
+      if (provider === 'gemini') {
+        result = await transcribeVideoFromFrames(frames, language, effectiveFps);
+      } else {
+        if (!selectedModel) throw new Error('No Ollama model selected');
+        result = await transcribeWithOllama(selectedModel, frames, language, effectiveFps);
+      }
+      
       setTranscription(result);
       setStatus({ stage: 'success', message: STATUS_MESSAGES.TRANSCRIPTION_COMPLETE });
     } catch (error) {
@@ -342,6 +371,11 @@ export default function App() {
               onPlayAudio={handlePlayAudio}
               onCopy={copyToClipboard}
               onDebug={handleDebug}
+              provider={provider}
+              onProviderChange={setProvider}
+              availableOllamaModels={availableOllamaModels}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
             />
           </div>
         </main>
