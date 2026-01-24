@@ -1,13 +1,21 @@
 import { GoogleGenAI, Modality } from '@google/genai';
+import { AI_MODELS, PRESERVE_LANGUAGES } from '../constants/app';
 
-if (!import.meta.env.VITE_API_KEY) {
-    throw new Error("VITE_API_KEY environment variable not set");
+// Validación más robusta de la API key
+const API_KEY = import.meta.env.VITE_API_KEY;
+if (!API_KEY || typeof API_KEY !== 'string' || API_KEY.trim() === '') {
+    console.error("VITE_API_KEY environment variable not set or invalid");
+    throw new Error("VITE_API_KEY environment variable not set or invalid");
 }
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
-const visionModel = 'gemini-2.5-pro';
-const ttsModel = 'gemini-2.5-flash-preview-tts';
+const ai = new GoogleGenAI({ apiKey: API_KEY });
+const visionModel = AI_MODELS.VISION_MODEL;
+const ttsModel = AI_MODELS.TTS_MODEL;
 
+/**
+ * Prompt base para la lectura de labios con IA
+ * Este prompt le indica al modelo Gemini cómo interpretar los movimientos labiales
+ */
 const LIP_READING_PROMPT_BASE = `You are an expert forensic lip-reading AI. Analyze the following sequence of HIGHLY MAGNIFIED, CROPPED video frames showing only a person's mouth. The frames are in chronological order, captured at 25 FPS, and show subtle movements of lips, teeth, and tongue.
 
 **Task**: Transcribe the exact words being spoken with maximum accuracy. Even small movements matter (e.g., lip closure for "p", tongue position for "l").
@@ -26,7 +34,15 @@ const LIP_READING_PROMPT_BASE = `You are an expert forensic lip-reading AI. Anal
 
 Now, transcribe the spoken phrase from the frame sequence:`;
 
+/**
+ * Transcribe un vídeo a partir de sus frames
+ * @param frames Array de frames codificados en base64
+ * @param language Idioma de la transcripción
+ * @param fps Frames por segundo del vídeo original
+ * @returns Texto transcrito
+ */
 export async function transcribeVideoFromFrames(frames: string[], language: string, fps: number): Promise<string> {
+    // Convertir los frames a formato compatible con la API
     const imageParts = frames.map(frame => ({
         inlineData: {
             mimeType: 'image/jpeg',
@@ -34,19 +50,23 @@ export async function transcribeVideoFromFrames(frames: string[], language: stri
         },
     }));
 
+    // Personalizar el prompt con el framerate real
     let finalPrompt = LIP_READING_PROMPT_BASE.replace('at 25 FPS', `at approximately ${Math.round(fps)} FPS`);
 
-    const preserveLanguages = ['Spanish', 'Galician', 'English'];
-
     if (language && language !== 'auto') {
+        // Si se especifica un idioma, añadirlo al prompt
         finalPrompt += ` The person is speaking ${language}.`;
-        if (!preserveLanguages.includes(language)) {
+
+        // Si el idioma no está en la lista de preservados, añadir traducción al español
+        if (!PRESERVE_LANGUAGES.includes(language as (typeof PRESERVE_LANGUAGES)[number])) {
             finalPrompt += " Output the original transcription first. Then, add a newline and provide the Spanish translation labeled as 'Translation (Spanish): '.";
         }
     } else {
+        // Si no se especifica idioma, detectarlo y traducir si es necesario
         finalPrompt += " Detect the language. If the spoken language is NOT Spanish, Galician, or English, output the original transcription, followed by a newline and the Spanish translation labeled as 'Translation (Spanish): '. Otherwise, output ONLY the original transcription.";
     }
 
+    // Realizar la solicitud al modelo de IA
     const response = await ai.models.generateContent({
         model: visionModel,
         contents: {
@@ -57,7 +77,7 @@ export async function transcribeVideoFromFrames(frames: string[], language: stri
         },
     });
 
-    return response.text;
+    return response.text || '';
 }
 
 export async function generateSpeech(text: string): Promise<string> {

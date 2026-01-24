@@ -1,4 +1,7 @@
 export const formatTime = (time: number) => {
+    if (isNaN(time) || time === null || time === undefined) {
+        return '00:00.00';
+    }
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     const milliseconds = Math.floor((time % 1) * 100);
@@ -6,6 +9,9 @@ export const formatTime = (time: number) => {
 };
 
 export const formatSeconds = (time: number) => {
+    if (isNaN(time) || time === null || time === undefined) {
+        return '0.00s';
+    }
     const totalSeconds = Math.floor(time);
     const milliseconds = Math.floor((time % 1) * 100);
     return `${totalSeconds}.${String(milliseconds).padStart(2, '0')}s`;

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TimeRange } from '../types';
 import { PlayIcon, StopIcon } from './Icons';
-import { formatTime as formatTimeUtil, formatSeconds } from '../utils/formatTime';
+import { formatSeconds } from '../utils/formatTime';
+import { useVideoPlayback } from '../hooks/useVideoPlayback';
 
 type TimeSelectorProps = {
     videoUrl: string;
@@ -13,36 +14,30 @@ type TimeSelectorProps = {
 const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfirm, onCancel }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const timelineRef = useRef<HTMLDivElement>(null);
-    const [range, setRange] = useState<TimeRange>({ start: 0, end: 0 }); // Start with 0 initially
-    const [isPlaying, setIsPlaying] = useState(false);
+    const [range, setRange] = useState<TimeRange>({ start: 0, end: duration });
     const [currentTime, setCurrentTime] = useState(0);
     const dragInfo = useRef<{ active: boolean; type: 'start' | 'end'; startX: number; startRange: TimeRange } | null>(null);
     const rangeRef = useRef<TimeRange>(range);
     const hasInitialized = useRef(false);
+    const { isPlaying, setIsPlaying, handlePlayPause } = useVideoPlayback({ start: 0, end: duration });
+
+    // Actualizar rangeRef cada vez que range cambie
+    useEffect(() => {
+        rangeRef.current = range;
+    }, [range]);
 
     useEffect(() => {
         // Initialize range when component mounts with a valid duration
-        if (duration > 0 && !hasInitialized.current) {
+        if (duration > 0) {
             setRange({ start: 0, end: duration });
-            hasInitialized.current = true;
         }
-    }, [duration]); // Run when duration changes, but only set if not initialized
+    }, [duration]); // Run when duration changes
 
     useEffect(() => {
         rangeRef.current = range;
     }, [range]);
 
-    const handleTimeUpdate = () => {
-        if (!videoRef.current) return;
-        const time = videoRef.current.currentTime;
-        setCurrentTime(time);
-        if (isPlaying && time >= range.end) {
-            videoRef.current.pause();
-            setIsPlaying(false);
-        }
-    };
-
-    const handlePlayPause = () => {
+    const handlePlayVideo = () => {
         if (!videoRef.current) return;
         if (isPlaying) {
             videoRef.current.pause();
@@ -67,33 +62,34 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
     };
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (!dragInfo.current?.active || !timelineRef.current || !videoRef.current) return;
+        const activeDragInfo = dragInfo.current;
+        if (!activeDragInfo?.active || !timelineRef.current || !videoRef.current) return;
 
         const timelineRect = timelineRef.current.getBoundingClientRect();
-        const dx = e.clientX - dragInfo.current.startX;
+        const dx = e.clientX - activeDragInfo.startX;
         const timeDelta = (dx / timelineRect.width) * duration;
 
         // Calculate new position for the handle being dragged using functional state update
-        if (dragInfo.current.type === 'start') {
+        if (activeDragInfo.type === 'start') {
             // Only modify the start value when dragging start handle
             setRange(prev => {
-                const newStart = dragInfo.current.startRange.start + timeDelta;
+                const newStart = activeDragInfo.startRange.start + timeDelta;
                 const clampedStart = Math.max(0, Math.min(prev.end, newStart)); // Use previous end as constraint
                 return { ...prev, start: clampedStart };
             });
         } else { // 'end' handle
             // Only modify the end value when dragging end handle
             setRange(prev => {
-                const newEnd = dragInfo.current.startRange.end + timeDelta;
+                const newEnd = activeDragInfo.startRange.end + timeDelta;
                 const clampedEnd = Math.min(duration, Math.max(prev.start, newEnd)); // Use previous start as constraint
                 return { ...prev, end: clampedEnd };
             });
         }
 
         // Update video playback position to match the handle being dragged
-        const newCalculatedTime = dragInfo.current.type === 'start'
-            ? Math.max(0, Math.min(rangeRef.current.end, dragInfo.current.startRange.start + timeDelta))
-            : Math.min(duration, Math.max(rangeRef.current.start, dragInfo.current.startRange.end + timeDelta));
+        const newCalculatedTime = activeDragInfo.type === 'start'
+            ? Math.max(0, Math.min(rangeRef.current.end, activeDragInfo.startRange.start + timeDelta))
+            : Math.min(duration, Math.max(rangeRef.current.start, activeDragInfo.startRange.end + timeDelta));
         videoRef.current.currentTime = newCalculatedTime;
 
     }, [duration]);  // Removed 'range' from dependencies since we use functional updates
@@ -111,8 +107,8 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
         };
     }, [handleMouseMove, handleMouseUp]); // This is now correct since handleMouseMove doesn't depend on range
 
-    const startPercent = (range.start / duration) * 100;
-    const endPercent = (range.end / duration) * 100;
+    const startPercent = duration > 0 ? (range.start / duration) * 100 : 0;
+    const endPercent = duration > 0 ? (range.end / duration) * 100 : 100;
 
     return (
         <div className="bg-black rounded-lg overflow-hidden relative flex flex-col justify-between h-full">
@@ -120,7 +116,17 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
                 ref={videoRef}
                 src={videoUrl}
                 className="w-full h-auto object-contain"
-                onTimeUpdate={handleTimeUpdate}
+                onTimeUpdate={() => {
+                    if (videoRef.current) {
+                        const time = videoRef.current.currentTime;
+                        setCurrentTime(time);
+                        // Verificar si el tiempo alcanzó el límite final
+                        if (isPlaying && time >= range.end) {
+                            videoRef.current!.pause();
+                            setIsPlaying(false);
+                        }
+                    }
+                }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
             />
@@ -128,7 +134,7 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
             <div className="p-4 space-y-3 bg-gray-900/50">
                 <div ref={timelineRef} className="relative w-full h-2 bg-gray-600 rounded cursor-pointer">
                     <div className="absolute top-0 h-full bg-purple-400 rounded" style={{ left: `${startPercent}%`, width: `${endPercent - startPercent}%` }}></div>
-                    <div className="absolute top-0 h-full w-px bg-white" style={{ left: `${(currentTime / duration) * 100}%` }}></div>
+                    <div className="absolute top-0 h-full w-px bg-white" style={{ left: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}></div>
 
                     {/* Start Handle */}
                     <div
@@ -145,7 +151,7 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
                     />
                 </div>
                 <div className="flex items-center justify-between text-white">
-                     <button onClick={handlePlayPause} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600">
+                     <button onClick={handlePlayVideo} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600">
                         {isPlaying ? <StopIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
                     </button>
                     
@@ -156,7 +162,7 @@ const TimeSelector: React.FC<TimeSelectorProps> = ({ videoUrl, duration, onConfi
 
                     <div className="flex gap-2">
                         <button onClick={onCancel} className="py-2 px-4 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition-colors">Cancelar</button>
-                        <button onClick={() => onConfirm(range)} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirmar Tempo</button>
+                        <button onClick={() => onConfirm(rangeRef.current)} className="py-2 px-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors">Confirmar Tempo</button>
                     </div>
                 </div>
             </div>

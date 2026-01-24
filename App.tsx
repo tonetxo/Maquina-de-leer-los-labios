@@ -10,6 +10,7 @@ import PreviewPlayer from './components/PreviewPlayer';
 import UploadScreen from './components/UploadScreen';
 import ControlsAndResults from './components/ControlsAndResults';
 import DebugViewer from './components/DebugViewer';
+import { STATUS_MESSAGES } from './constants/app';
 
 export default function App() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -40,7 +41,7 @@ export default function App() {
     setCurrentStage('uploading');
     setLanguage('auto');
     setDebugFrames(null);
-    setStatus({ stage: 'idle', message: 'Sube un vídeo para comezar' });
+    setStatus({ stage: 'idle', message: STATUS_MESSAGES.IDLE_UPLOAD });
     if (fileInputRef.current) {
         fileInputRef.current.value = '';
     }
@@ -50,7 +51,7 @@ export default function App() {
     if (!file) return;
 
     if (!file.type.startsWith('video/')) {
-        setStatus({ stage: 'error', message: 'Tipo de ficheiro non válido. Por favor, sube un vídeo.' });
+        setStatus({ stage: 'error', message: STATUS_MESSAGES.INVALID_FILE_TYPE });
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
@@ -59,7 +60,15 @@ export default function App() {
 
     resetState();
     setVideoFile(file);
-    const url = URL.createObjectURL(file);
+    let url: string;
+
+    try {
+      url = URL.createObjectURL(file);
+    } catch (error) {
+      setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_VIDEO_PROCESSING });
+      return;
+    }
+
     setVideoUrl(url);
 
     const video = document.createElement('video');
@@ -68,12 +77,12 @@ export default function App() {
       setVideoDuration(video.duration);
       setTimeRange({ start: 0, end: video.duration });
       setCurrentStage('selecting_time');
-      setStatus({ stage: 'idle', message: 'Paso 1: Selecciona o intervalo de tempo a analizar.' });
+      setStatus({ stage: 'idle', message: STATUS_MESSAGES.STEP_1_SELECT_TIME });
     };
     video.onerror = () => {
-      setStatus({ stage: 'error', message: 'Erro ao cargar os metadatos do vídeo.' });
+      setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_LOADING_METADATA });
       setCurrentStage('uploading');
-    }
+    };
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,7 +114,7 @@ export default function App() {
   const handleTimeSelectConfirm = async (range: TimeRange) => {
     setTimeRange(range);
     setCurrentStage('cropping_area');
-    setStatus({ stage: 'idle', message: 'Paso 2: Define a área de recorte nos beizos do falante.' });
+    setStatus({ stage: 'idle', message: STATUS_MESSAGES.STEP_2_DEFINE_CROP });
   };
 
   const handleCropConfirm = async (crop: CropArea) => {
@@ -116,11 +125,11 @@ export default function App() {
 
   const getProcessedFrames = async (taskName: string) => {
     if (!videoFile || !cropArea || !timeRange) {
-      setStatus({ stage: 'error', message: 'Falta o vídeo, a área de recorte ou o intervalo de tempo.' });
+      setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_MISSING_REQUIREMENTS });
       throw new Error('Missing requirements');
     }
 
-    setStatus({ stage: 'processing', message: `Extraendo fotogramas para ${taskName}...`, progress: 0 });
+    setStatus({ stage: 'processing', message: STATUS_MESSAGES.PROCESSING_FRAMES(taskName), progress: 0 });
     
     return extractFramesFromVideo(
         videoFile, 
@@ -135,16 +144,27 @@ export default function App() {
       setCurrentStage('processing');
       const frames = await getProcessedFrames('transcription');
 
-      setStatus({ stage: 'analyzing', message: 'A IA está analizando os movementos dos beizos...' });
+      if (!frames || frames.length === 0) {
+        setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_NO_FRAMES_EXTRACTED });
+        return;
+      }
+
+      setStatus({ stage: 'analyzing', message: STATUS_MESSAGES.ANALYZING_LIPS });
       const duration = timeRange.end - timeRange.start;
       const effectiveFps = 90 / duration;
+
+      if (duration <= 0) {
+        setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_INVALID_TIME_RANGE });
+        return;
+      }
+
       const result = await transcribeVideoFromFrames(frames, language, effectiveFps);
       setTranscription(result);
-      setStatus({ stage: 'success', message: 'Transcrición completada!' });
+      setStatus({ stage: 'success', message: STATUS_MESSAGES.TRANSCRIPTION_COMPLETE });
     } catch (error) {
       console.error('Transcription failed:', error);
       if (error instanceof Error && error.message !== 'Missing requirements') {
-          setStatus({ stage: 'error', message: `Ocorreu un erro: ${error.message}` });
+          setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_TRANSCRIPTION_FAILED(error instanceof Error ? error.message : STATUS_MESSAGES.ERROR_UNKNOWN) });
       }
     }
   };
@@ -171,17 +191,39 @@ export default function App() {
     }
 
     if (!transcription) return;
-    setStatus({ stage: 'generating_audio', message: 'Xerando audio...' });
+    setStatus({ stage: 'generating_audio', message: STATUS_MESSAGES.GENERATING_AUDIO });
 
     try {
       const audioBase64 = await generateSpeech(transcription);
+      if (!audioBase64) {
+        setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_NO_AUDIO_RECEIVED });
+        return;
+      }
+
       if (!audioContextRef.current) {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) {
+          setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_BROWSER_NO_AUDIO_API });
+          return;
+        }
         audioContextRef.current = new AudioContextClass({ sampleRate: 32000 });
       }
+
       const context = audioContextRef.current;
+
+      // Resume context if suspended (needed for some browsers)
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+
       const audioBytes = decodeBase64(audioBase64);
       const audioBuffer = await decodeAudioData(audioBytes, context);
+
+      if (!audioBuffer) {
+        setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_DECODE_AUDIO });
+        return;
+      }
+
       const source = context.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(context.destination);
@@ -189,10 +231,10 @@ export default function App() {
       source.start();
       audioSourceRef.current = source;
       setIsPlayingAudio(true);
-      setStatus({ stage: 'success', message: 'Reproducindo audio.' });
+      setStatus({ stage: 'success', message: STATUS_MESSAGES.PLAYING_AUDIO });
     } catch (error) {
       console.error('Text-to-speech failed:', error);
-      setStatus({ stage: 'error', message: `Non se puido xerar o audio: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      setStatus({ stage: 'error', message: STATUS_MESSAGES.ERROR_TTS_FAILED(error instanceof Error ? error.message : STATUS_MESSAGES.ERROR_UNKNOWN) });
     }
   };
 
@@ -207,8 +249,13 @@ export default function App() {
     }
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(transcription);
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(transcription);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+      setStatus({ stage: 'error', message: 'Non se puido copiar ao portapapeis' });
+    }
   };
   
   const canTranscribe = videoFile && cropArea && timeRange && !isProcessing && currentStage === 'preview';

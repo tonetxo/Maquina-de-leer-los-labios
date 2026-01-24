@@ -1,0 +1,1 @@
+export type Stage = 'uploading' | 'selecting_time' | 'cropping_area' | 'preview' | 'processing' | 'debugging';

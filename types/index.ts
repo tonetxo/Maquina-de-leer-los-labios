@@ -10,10 +10,5 @@ export type TimeRange = {
   end: number;
 };
 
-export type Status = {
-  stage: 'idle' | 'processing' | 'analyzing' | 'success' | 'error' | 'generating_audio';
-  message: string;
-  progress?: number;
-};
-
-export type Stage = 'uploading' | 'selecting_time' | 'cropping_area' | 'preview' | 'processing' | 'debugging';
+export { Status } from './status';
+export { Stage } from './ui';

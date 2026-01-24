@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { CropArea, TimeRange } from '../types';
 import { PlayIcon, StopIcon } from './Icons';
 import { formatTime } from '../utils/formatTime';
+import { useVideoPlayback } from '../hooks/useVideoPlayback';
 
 type CropperProps = {
     videoUrl: string;
@@ -16,16 +17,16 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
     const containerRef = useRef<HTMLDivElement>(null);
     const [cropBox, setCropBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
     const [videoGeom, setVideoGeom] = useState({ renderWidth: 0, renderHeight: 0, xOffset: 0, yOffset: 0 });
-    const [currentTime, setCurrentTime] = useState(timeRange.start);
-    const [isPlaying, setIsPlaying] = useState(false);
+    const { isPlaying, currentTime, setCurrentTime, handleTimeUpdate, handlePlayPause, handleScrubberChange } = useVideoPlayback(timeRange);
     const dragInfo = useRef({ active: false, type: '', startX: 0, startY: 0, startBox: { ...cropBox } });
     const initialCropSetRef = useRef(false);
 
     useEffect(() => {
         if(videoRef.current) {
             videoRef.current.currentTime = timeRange.start;
+            setCurrentTime(timeRange.start);
         }
-    }, [timeRange.start]);
+    }, [timeRange.start, setCurrentTime]);
     
     useEffect(() => {
         const video = videoRef.current;
@@ -61,17 +62,24 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
             setVideoGeom({ renderWidth, renderHeight, xOffset, yOffset });
         };
 
-        if (video.readyState >= 1) { // METADATA_LOADED
+        const onLoadedMetadata = () => {
             calculateGeom();
+            if (Math.abs(video.currentTime - timeRange.start) > 0.1) {
+                video.currentTime = timeRange.start;
+            }
+        };
+
+        if (video.readyState >= 1) { // METADATA_LOADED
+            onLoadedMetadata();
         } else {
-            video.addEventListener('loadedmetadata', calculateGeom, { once: true });
+            video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
         }
         
         const handleResize = () => calculateGeom();
         window.addEventListener('resize', handleResize);
 
         return () => {
-            if (video) video.removeEventListener('loadedmetadata', calculateGeom);
+            if (video) video.removeEventListener('loadedmetadata', onLoadedMetadata);
             window.removeEventListener('resize', handleResize);
         }
     }, []);
@@ -104,34 +112,7 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
     }, [videoGeom, initialCropArea, videoRef]);
 
 
-    const handleTimeUpdate = () => {
-        if (!videoRef.current) return;
-        const time = videoRef.current.currentTime;
-        setCurrentTime(time);
-        if (isPlaying && time >= timeRange.end) {
-            videoRef.current.pause();
-            setIsPlaying(false);
-        }
-    };
     
-    const handlePlayPause = () => {
-        if (!videoRef.current) return;
-        if (isPlaying) {
-            videoRef.current.pause();
-        } else {
-            if (videoRef.current.currentTime < timeRange.start || videoRef.current.currentTime >= timeRange.end) {
-                videoRef.current.currentTime = timeRange.start;
-            }
-            videoRef.current.play();
-        }
-    };
-
-    const handleScrubberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!videoRef.current) return;
-        const newTime = parseFloat(e.target.value);
-        setCurrentTime(newTime);
-        videoRef.current.currentTime = newTime;
-    };
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>, type: string) => {
         e.preventDefault();
@@ -263,7 +244,7 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
     return (
         <div className="bg-black rounded-lg overflow-hidden relative flex flex-col h-full">
             <div ref={containerRef} className="relative w-full flex-grow flex items-center justify-center">
-                <video ref={videoRef} src={videoUrl} className="max-w-full max-h-full object-contain" onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} muted loop />
+                <video ref={videoRef} src={videoUrl} className="max-w-full max-h-full object-contain" onTimeUpdate={() => handleTimeUpdate(videoRef.current)} muted />
                 <div
                     className="absolute border-2 border-dashed border-purple-400 cursor-move bg-black/20"
                     style={{ 
@@ -283,7 +264,7 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
             </div>
             <div className="p-3 bg-gray-900/50 space-y-2">
                 <div className="flex items-center gap-3">
-                    <button onClick={handlePlayPause} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600">
+                    <button onClick={() => handlePlayPause(videoRef.current)} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600">
                         {isPlaying ? <StopIcon className="w-4 h-4 text-white" /> : <PlayIcon className="w-4 h-4 text-white" />}
                     </button>
                     <span className="text-xs font-mono text-white">{formatTime(currentTime)}</span>
@@ -292,8 +273,8 @@ const Cropper: React.FC<CropperProps> = ({ videoUrl, timeRange, initialCropArea,
                         min={timeRange.start}
                         max={timeRange.end}
                         step="0.01"
-                        value={currentTime}
-                        onChange={handleScrubberChange}
+                        value={currentTime ?? timeRange.start ?? 0}
+                        onChange={(e) => handleScrubberChange(e, videoRef.current)}
                         className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer range-sm accent-purple-500"
                     />
                      <span className="text-xs font-mono text-white">{formatTime(timeRange.end)}</span>
